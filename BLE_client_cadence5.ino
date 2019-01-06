@@ -64,13 +64,14 @@ uint32_t        revolurtions = 0;
 uint16_t        cadence = 0;
 uint16_t        eventtime_s = 0;
 uint16_t        eventtime_c = 0;
+uint32_t        velocity_revolurtions = 0;
+uint32_t        velocity_cadence = 0;
 
 static BLEUUID      serviceUUID( (uint16_t)0x1816 );     // Cycling Speed and Cadence  org.bluetooth.service.cycling_speed_and_cadence 0x1816  GSS
 static BLEUUID      measurementcharUUID( (uint16_t)0x2A5B ); // CSC Measurement org.bluetooth.characteristic.csc_measurement  0x2A5B  GSS
 static BLEUUID      featurecharUUID( (uint16_t)0x2A5C );   // CSC Feature  org.bluetooth.characteristic.csc_feature  0x2A5C  GSS
 
 static BLEClient*   pSensorClient[BLE_INDEX_COUNT] = { NULL, };
-static char       pSensorAddress[BLE_INDEX_COUNT][18] = { "G0:00:00:00:00:00", "G0:00:00:00:00:00" };
 static bool     reConnectTry[BLE_INDEX_COUNT] = { false, };
 
 void setup( void ) {
@@ -172,10 +173,12 @@ void DrawUpdateTime( ) {
   // 임시로 해보자
   tft.setTextColor( TFT_WHITE, TFT_BLACK );     
   tft.drawNumber( revolurtions, POS_GRAPH_X+70, POS_GRAPH_Y+3, 2 );  
-  tft.drawNumber( eventtime_s, POS_GRAPH_X+150, POS_GRAPH_Y+3, 2 );
+  //tft.drawNumber( eventtime_s, POS_GRAPH_X+150, POS_GRAPH_Y+3, 2 );
+  tft.drawFloat( velocity_revolurtions/100.0f,5, POS_GRAPH_X+150, POS_GRAPH_Y+3, 2 );
    
   tft.drawNumber( cadence, POS_GRAPH_X+70, POS_GRAPH_Y+33, 2 );
-  tft.drawNumber( eventtime_c, POS_GRAPH_X+150, POS_GRAPH_Y+33, 2 );
+  //tft.drawNumber( eventtime_c, POS_GRAPH_X+150, POS_GRAPH_Y+33, 2 );
+  tft.drawFloat( velocity_cadence/100.0f, 5, POS_GRAPH_X+150, POS_GRAPH_Y+33, 2 );
 }
 void ClickScreen( ) {  
   uint16_t x = 0, y = 0;                        // To store the touch coordinates  
@@ -231,12 +234,8 @@ void Scanning( ) {
       if ( pSensorClient[j]->isConnected( ) == false ) {
         int8_t ret = connectToServer( pSensorClient[j], result.getDevice( i ).getAddress( ).toString( ).c_str( ) );
         delay(500);
-        if ( ret >= 0 ) {
-          strcpy( pSensorAddress[j], result.getDevice( i ).getAddress( ).toString( ).c_str( ) );
-          reConnectTry[j] = true;
-          // 화면 출력도해보자.
-          //tft.setTextColor( TFT_WHITE, TFT_BLACK );
-          //tft.drawString( result.getDevice( i ).toString( ).c_str( ), 0, 30 + j * 20, 4 );
+        if ( ret >= 0 ) {          
+          reConnectTry[j] = true;          
         }
         break;
       }
@@ -331,16 +330,25 @@ static void notifyCallback( BLERemoteCharacteristic* pBLERemoteCharacteristic, u
     // 속도 데이터
     //revolurtions = (int8_t)pData[1] + (int8_t)pData[2] * 256 + (int8_t)pData[3] * 65536 + (int8_t)pData[4] * 16777216;
     //eventtime_s = (int8_t)pData[5] + (int8_t)pData[6] * 256;
+
+    int32_t pre_revolurtions = revolurtions;
+    int16_t pre_eventtime_s = eventtime_s;
     revolurtions = *(int32_t*)(pData+1);
-    eventtime_s = *(int16_t*)(pData+5);
-    // 여기서 부터 처리를 해야한다.
+    eventtime_s = *(int16_t*)(pData+5);    
+    if( eventtime_s != pre_eventtime_s && pre_revolurtions != 0 )
+      velocity_revolurtions = (float)( ( revolurtions - pre_revolurtions ) * 1024 ) / (float)( eventtime_s - pre_eventtime_s ) * 6000;
   }
   else if ( pData[0] == 2 ) {
     // 케이던스 데이터
     //cadence = pData[1] + pData[2] * 256;
     //eventtime_c = pData[3] + pData[4] * 256;
+
+    int32_t pre_cadence = cadence;
+    int16_t pre_eventtime_c = eventtime_c;
     cadence = *(int16_t*)(pData+1);
-    eventtime_c = *(int16_t*)(pData+3);
+    eventtime_c = *(int16_t*)(pData+3);    
+    if( eventtime_s != pre_eventtime_c && pre_cadence != 0 )
+      velocity_cadence = (float)( ( cadence - pre_cadence ) * 1024 ) / (float)( eventtime_c - pre_eventtime_c ) * 6000;
   }
   else {
     // 그 외는 일단 처리하지 않는다.
